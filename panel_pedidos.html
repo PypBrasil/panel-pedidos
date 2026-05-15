@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Panel de Pedidos — Panadería Brasil</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/msal.js/2.38.3/msal-browser.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Georgia, serif; background: #F0E8D0; min-height: 100vh; }
+  
+  #loginScreen { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; gap: 20px; }
+  .login-card { background: #fff; border-radius: 12px; padding: 2.5rem; text-align: center; max-width: 360px; width: 90%; box-shadow: 0 4px 24px rgba(0,0,0,0.1); }
+  .login-card h1 { color: #2B5E35; font-size: 22px; margin-bottom: 6px; }
+  .login-card p { color: #888; font-size: 13px; margin-bottom: 24px; }
+  
+  header { background: #2B5E35; padding: 1rem 1.25rem; }
+  header h1 { color: #F0E8D0; font-size: 17px; font-weight: bold; }
+  header p { color: rgba(240,232,208,0.6); font-size: 11px; margin-top: 2px; }
+  
+  .mes-nav { background: #2B5E35; border-top: 1px solid rgba(255,255,255,0.1); padding: 0.6rem 1.25rem; display: flex; align-items: center; gap: 12px; }
+  .mes-nav button { background: rgba(255,255,255,0.15); border: none; border-radius: 6px; width: 30px; height: 30px; color: #F0E8D0; font-size: 16px; cursor: pointer; }
+  .mes-nav .mes-label { flex: 1; text-align: center; color: #F0E8D0; font-size: 15px; font-weight: bold; }
+  .mes-nav .count { background: rgba(255,255,255,0.1); border-radius: 6px; padding: 3px 10px; color: #F0E8D0; font-size: 12px; }
+  
+  .content { padding: 1rem; max-width: 680px; margin: 0 auto; }
+  
+  .pedido-card { background: #fff; border-radius: 10px; border: 1px solid #E8D9B8; margin-bottom: 10px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.05); }
+  .pedido-view { padding: 0.85rem 1rem; display: flex; align-items: flex-start; gap: 12px; }
+  .fecha-badge { background: #2B5E35; border-radius: 8px; padding: 6px 10px; text-align: center; min-width: 44px; flex-shrink: 0; }
+  .fecha-badge .dia-semana { color: rgba(240,232,208,0.7); font-size: 9px; text-transform: uppercase; letter-spacing: 0.1em; }
+  .fecha-badge .dia-num { color: #F0E8D0; font-size: 18px; font-weight: bold; line-height: 1; }
+  .pedido-info { flex: 1; min-width: 0; }
+  .pedido-info .cliente { font-size: 14px; font-weight: bold; color: #1a1a1a; }
+  .pedido-info .hora-badge { display: inline-block; font-size: 12px; color: #888; background: #F0E8D0; border-radius: 4px; padding: 1px 7px; margin-left: 6px; }
+  .pedido-info .specs { font-size: 13px; color: #555; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .btn-editar { background: none; border: 1px solid #E8D9B8; border-radius: 6px; padding: 6px 12px; font-size: 12px; color: #2B5E35; cursor: pointer; font-family: Georgia, serif; font-weight: bold; flex-shrink: 0; }
+  .btn-editar:hover { background: #F0E8D0; }
+  
+  .pedido-edit { padding: 1rem; border-top: 3px solid #2B5E35; }
+  .edit-title { font-size: 12px; font-weight: bold; color: #2B5E35; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+  .edit-title::before { content: ''; display: block; width: 4px; height: 16px; background: #2B5E35; border-radius: 2px; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+  .field label { font-size: 11px; color: #666; display: block; margin-bottom: 4px; }
+  .field input, .field textarea { width: 100%; padding: 7px 10px; border: 1px solid #E8D9B8; border-radius: 6px; font-size: 14px; font-family: Georgia, serif; }
+  .field input:focus, .field textarea:focus { outline: none; border-color: #2B5E35; }
+  .field input.error { border-color: #e74c3c; }
+  .field .err-msg { font-size: 11px; color: #e74c3c; margin-top: 3px; }
+  .field textarea { resize: vertical; min-height: 70px; }
+  .edit-actions { display: flex; gap: 8px; margin-top: 12px; }
+  .btn-guardar { flex: 1; background: #2B5E35; color: #F0E8D0; border: none; border-radius: 6px; padding: 9px; font-size: 13px; font-weight: bold; cursor: pointer; font-family: Georgia, serif; }
+  .btn-guardar:hover { background: #1e4428; }
+  .btn-guardar:disabled { opacity: 0.6; cursor: not-allowed; }
+  .btn-cancelar { background: none; border: 1px solid #2B5E35; border-radius: 6px; padding: 9px 16px; font-size: 13px; color: #2B5E35; cursor: pointer; font-family: Georgia, serif; }
+  
+  .empty { text-align: center; padding: 3rem 1rem; color: #999; }
+  .empty .icon { font-size: 40px; margin-bottom: 12px; }
+  
+  .toast { position: fixed; top: 16px; right: 16px; z-index: 1000; padding: 10px 18px; border-radius: 8px; font-size: 13px; font-family: Georgia, serif; box-shadow: 0 4px 20px rgba(0,0,0,0.2); display: none; }
+  .toast.success { background: #2B5E35; color: #F0E8D0; }
+  .toast.error { background: #c0392b; color: #fff; }
+  
+  .btn-ms { background: #2B5E35; color: #F0E8D0; border: none; border-radius: 8px; padding: 12px 24px; font-size: 14px; font-family: Georgia, serif; font-weight: bold; cursor: pointer; width: 100%; }
+  .btn-ms:hover { background: #1e4428; }
+  
+  .loading { text-align: center; padding: 2rem; color: #888; font-size: 14px; }
+  
+  .user-bar { display: flex; align-items: center; justify-content: space-between; padding: 6px 1.25rem; background: rgba(0,0,0,0.15); }
+  .user-bar span { color: rgba(240,232,208,0.7); font-size: 12px; }
+  .btn-logout { background: none; border: 1px solid rgba(240,232,208,0.3); border-radius: 4px; padding: 3px 10px; color: rgba(240,232,208,0.7); font-size: 11px; cursor: pointer; font-family: Georgia, serif; }
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="loginScreen">
+  <div class="login-card">
+    <h1>Panadería y Pastelera Brasil</h1>
+    <p>Panel de gestión de pedidos</p>
+    <button class="btn-ms" onclick="login()">Iniciar sesión con Microsoft</button>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="appScreen" style="display:none;">
+  <header>
+    <div class="user-bar">
+      <span id="userEmail"></span>
+      <button class="btn-logout" onclick="logout()">Cerrar sesión</button>
+    </div>
+    <h1>Panel de Pedidos</h1>
+    <p>Panadería y Pastelera Brasil</p>
+  </header>
+  <div class="mes-nav">
+    <button onclick="cambiarMes(-1)">‹</button>
+    <div class="mes-label" id="mesLabel"></div>
+    <div class="count" id="countLabel">0 pedidos</div>
+    <button onclick="cambiarMes(1)">›</button>
+  </div>
+  <div class="content">
+    <div id="pedidosList"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ══════════════════════════════════════════════
+// CONFIGURACIÓN — tus datos reales
+// ══════════════════════════════════════════════
+const CONFIG = {
+  clientId: "d1ce799c-b55b-4922-8e4e-4ae8e0a07f3c",
+  tenantId: "4c7a09bd-93f8-4e66-ae68-4f6737dbb0d0",
+  siteHost: "panaderiabrasil.sharepoint.com",
+  sitePath: "/sites/PanaderiayPasteleraBrasil-Pedidos",
+  driveFolder: "Pedidos",
+  fileName: "Pedidos y Encargos 2026.xlsx",
+  tableName: "EncargosPedidos",
+  sheetName: "PIZARRA"
+};
+
+const MESES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+const DIAS = ["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
+
+// MSAL
+const msalConfig = {
+  auth: {
+    clientId: CONFIG.clientId,
+    authority: `https://login.microsoftonline.com/${CONFIG.tenantId}`,
+    redirectUri: window.location.href.split('?')[0]
+  },
+  cache: { cacheLocation: "sessionStorage" }
+};
+
+const msalInstance = new msal.PublicClientApplication(msalConfig);
+const scopes = ["Files.ReadWrite", "User.Read"];
+
+let accessToken = null;
+let workbookId = null;
+let pedidos = [];
+let mesIdx = new Date().getMonth();
+let anio = new Date().getFullYear();
+let editId = null;
+
+// ══════════════════════════════════════════════
+// AUTH
+// ══════════════════════════════════════════════
+async function login() {
+  try {
+    const result = await msalInstance.loginPopup({ scopes });
+    msalInstance.setActiveAccount(result.account);
+    accessToken = result.accessToken;
+    document.getElementById("userEmail").textContent = result.account.username;
+    document.getElementById("loginScreen").style.display = "none";
+    document.getElementById("appScreen").style.display = "block";
+    await initApp();
+  } catch(e) {
+    showToast("Error al iniciar sesión: " + e.message, "error");
+  }
+}
+
+function logout() {
+  msalInstance.logoutPopup();
+  location.reload();
+}
+
+async function getToken() {
+  const account = msalInstance.getActiveAccount();
+  if (!account) return null;
+  try {
+    const result = await msalInstance.acquireTokenSilent({ scopes, account });
+    return result.accessToken;
+  } catch {
+    const result = await msalInstance.acquireTokenPopup({ scopes });
+    return result.accessToken;
+  }
+}
+
+// ══════════════════════════════════════════════
+// GRAPH API
+// ══════════════════════════════════════════════
+async function graphGet(url) {
+  const token = await getToken();
+  const res = await fetch("https://graph.microsoft.com/v1.0" + url, {
+    headers: { Authorization: "Bearer " + token }
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+async function graphPatch(url, body) {
+  const token = await getToken();
+  const res = await fetch("https://graph.microsoft.com/v1.0" + url, {
+    method: "PATCH",
+    headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+// ══════════════════════════════════════════════
+// INIT
+// ══════════════════════════════════════════════
+async function initApp() {
+  showList("<div class='loading'>Cargando pedidos...</div>");
+  try {
+    // Buscar el archivo Excel
+    const siteRes = await graphGet(`/sites/${CONFIG.siteHost}:${CONFIG.sitePath}`);
+    const siteId = siteRes.id;
+    const driveRes = await graphGet(`/sites/${siteId}/drive/root:/${CONFIG.driveFolder}/${CONFIG.fileName}`);
+    workbookId = driveRes.id;
+    const driveId = driveRes.parentReference.driveId;
+    workbookId = `${driveId}/${driveRes.id}`;
+    
+    await cargarPedidos(siteId);
+  } catch(e) {
+    showList(`<div class='empty'><div class='icon'>⚠️</div><div>Error al cargar: ${e.message}</div></div>`);
+  }
+}
+
+let siteIdGlobal = null;
+let driveIdGlobal = null;
+let fileIdGlobal = null;
+
+async function cargarPedidos(siteId) {
+  try {
+    if (!siteIdGlobal) {
+      const siteRes = await graphGet(`/sites/${CONFIG.siteHost}:${CONFIG.sitePath}`);
+      siteIdGlobal = siteRes.id;
+    }
+    if (!fileIdGlobal) {
+      const driveRes = await graphGet(`/sites/${siteIdGlobal}/drive/root:/${CONFIG.driveFolder}/${CONFIG.fileName}`);
+      driveIdGlobal = driveRes.parentReference.driveId;
+      fileIdGlobal = driveRes.id;
+    }
+
+    const tablaRes = await graphGet(
+      `/drives/${driveIdGlobal}/items/${fileIdGlobal}/workbook/tables/${CONFIG.tableName}/rows`
+    );
+
+    // Obtener encabezados
+    const headerRes = await graphGet(
+      `/drives/${driveIdGlobal}/items/${fileIdGlobal}/workbook/tables/${CONFIG.tableName}/columns`
+    );
+    const cols = headerRes.value.map(c => c.name);
+
+    pedidos = tablaRes.value.map((row, idx) => {
+      const vals = row.values[0];
+      const obj = { _rowIndex: idx };
+      cols.forEach((col, i) => obj[col] = vals[i] ?? "");
+      return obj;
+    });
+
+    renderMes();
+  } catch(e) {
+    showList(`<div class='empty'><div class='icon'>⚠️</div><div>Error cargando tabla: ${e.message}</div></div>`);
+  }
+}
+
+// ══════════════════════════════════════════════
+// RENDER
+// ══════════════════════════════════════════════
+function renderMes() {
+  const label = `${MESES[mesIdx]} ${anio}`;
+  document.getElementById("mesLabel").textContent = label;
+
+  const del_mes = pedidos.filter(p => {
+    const f = parseFecha(p["Fecha del pedido"]);
+    return f && f.getMonth() === mesIdx && f.getFullYear() === anio;
+  }).sort((a, b) => {
+    const fa = parseFecha(a["Fecha del pedido"]);
+    const fb = parseFecha(b["Fecha del pedido"]);
+    if (fa - fb !== 0) return fa - fb;
+    return (a["Hora"] || "").localeCompare(b["Hora"] || "");
+  });
+
+  document.getElementById("countLabel").textContent = `${del_mes.length} pedido${del_mes.length !== 1 ? "s" : ""}`;
+
+  if (del_mes.length === 0) {
+    showList(`<div class='empty'><div class='icon'>📋</div><div>No hay pedidos en ${label}</div></div>`);
+    return;
+  }
+
+  const html = del_mes.map(p => renderPedido(p)).join("");
+  showList(html);
+}
+
+function parseFecha(val) {
+  if (!val) return null;
+  // Intenta DD/MM/YYYY
+  const m1 = String(val).match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/);
+  if (m1) return new Date(+m1[3], +m1[2]-1, +m1[1]);
+  // Intenta YYYY-MM-DD
+  const m2 = String(val).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m2) return new Date(+m2[1], +m2[2]-1, +m2[3]);
+  // Número de serie Excel
+  if (!isNaN(val) && val > 40000) {
+    const d = new Date((val - 25569) * 86400 * 1000);
+    return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+  }
+  return null;
+}
+
+function renderPedido(p) {
+  const f = parseFecha(p["Fecha del pedido"]);
+  const dia = f ? f.getDate().toString().padStart(2,"0") : "?";
+  const diaSem = f ? DIAS[f.getDay()] : "";
+  const hora = p["Hora"] || "";
+  const cliente = p["Nombre Cliente/Mesón"] || "";
+  const specs = p["Indicar especificaciones, productos y cantidades del pedido"] || "";
+  const id = p["Id"];
+
+  if (editId == id) {
+    return `
+    <div class="pedido-card" id="card-${id}">
+      <div class="pedido-edit">
+        <div class="edit-title">Editando pedido #${id}</div>
+        <div class="grid-2">
+          <div class="field">
+            <label>Fecha de entrega</label>
+            <input type="date" id="edit-fecha-${id}" value="${f ? f.toISOString().split('T')[0] : ''}" />
+          </div>
+          <div class="field">
+            <label>Hora (HH:MM)</label>
+            <input type="text" id="edit-hora-${id}" value="${hora}" placeholder="17:35" maxlength="5" oninput="formatHora(this)" />
+            <div class="err-msg" id="hora-err-${id}" style="display:none">Formato inválido. Usa HH:MM</div>
+          </div>
+        </div>
+        <div class="field" style="margin-bottom:10px">
+          <label>Cliente / Mesón</label>
+          <input type="text" id="edit-cliente-${id}" value="${escHtml(cliente)}" />
+        </div>
+        <div class="field">
+          <label>Especificaciones del pedido</label>
+          <textarea id="edit-specs-${id}">${escHtml(specs)}</textarea>
+        </div>
+        <div class="edit-actions">
+          <button class="btn-guardar" id="btn-save-${id}" onclick="guardar(${id}, ${p._rowIndex})">Guardar cambios</button>
+          <button class="btn-cancelar" onclick="cancelarEdit()">Cancelar</button>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  return `
+  <div class="pedido-card" id="card-${id}">
+    <div class="pedido-view">
+      <div class="fecha-badge">
+        <div class="dia-semana">${diaSem}</div>
+        <div class="dia-num">${dia}</div>
+      </div>
+      <div class="pedido-info">
+        <div class="cliente">${escHtml(cliente)}<span class="hora-badge">${hora}</span></div>
+        <div class="specs">${escHtml(specs)}</div>
+      </div>
+      <button class="btn-editar" onclick="startEdit(${id})">Editar</button>
+    </div>
+  </div>`;
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+
+function showList(html) {
+  document.getElementById("pedidosList").innerHTML = html;
+}
+
+// ══════════════════════════════════════════════
+// EDICIÓN
+// ══════════════════════════════════════════════
+function startEdit(id) {
+  editId = id;
+  renderMes();
+  const card = document.getElementById("card-" + id);
+  if (card) card.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+function cancelarEdit() {
+  editId = null;
+  renderMes();
+}
+
+function formatHora(input) {
+  let v = input.value.replace(/[^0-9:]/g,"");
+  if (v.length === 2 && !v.includes(":")) v += ":";
+  input.value = v;
+}
+
+function validarHora(v) {
+  return /^([01]\d|2[0-3]):([0-5]\d)$/.test(v);
+}
+
+async function guardar(id, rowIndex) {
+  const fecha = document.getElementById(`edit-fecha-${id}`).value;
+  const hora = document.getElementById(`edit-hora-${id}`).value;
+  const cliente = document.getElementById(`edit-cliente-${id}`).value.trim();
+  const specs = document.getElementById(`edit-specs-${id}`).value.trim();
+  const errEl = document.getElementById(`hora-err-${id}`);
+  const btnEl = document.getElementById(`btn-save-${id}`);
+
+  if (!validarHora(hora)) {
+    errEl.style.display = "block";
+    document.getElementById(`edit-hora-${id}`).classList.add("error");
+    return;
+  }
+  errEl.style.display = "none";
+
+  btnEl.disabled = true;
+  btnEl.textContent = "Guardando...";
+
+  try {
+    // Formatear fecha a DD/MM/YYYY
+    const [y,m,d] = fecha.split("-");
+    const fechaFmt = `${d}/${m}/${y}`;
+
+    // Actualizar fila en Excel via Graph API
+    await graphPatch(
+      `/drives/${driveIdGlobal}/items/${fileIdGlobal}/workbook/tables/${CONFIG.tableName}/rows/itemAt(index=${rowIndex})`,
+      {
+        values: [[
+          id,
+          fechaFmt,
+          hora,
+          cliente,
+          specs
+        ]]
+      }
+    );
+
+    // Actualizar localmente
+    const pedido = pedidos.find(p => p["Id"] == id);
+    if (pedido) {
+      pedido["Fecha del pedido"] = fechaFmt;
+      pedido["Hora"] = hora;
+      pedido["Nombre Cliente/Mesón"] = cliente;
+      pedido["Indicar especificaciones, productos y cantidades del pedido"] = specs;
+    }
+
+    editId = null;
+    renderMes();
+    showToast("Pedido actualizado correctamente ✓");
+  } catch(e) {
+    showToast("Error al guardar: " + e.message, "error");
+    btnEl.disabled = false;
+    btnEl.textContent = "Guardar cambios";
+  }
+}
+
+// ══════════════════════════════════════════════
+// NAVEGACIÓN MES
+// ══════════════════════════════════════════════
+function cambiarMes(dir) {
+  editId = null;
+  mesIdx += dir;
+  if (mesIdx < 0) { mesIdx = 11; anio--; }
+  if (mesIdx > 11) { mesIdx = 0; anio++; }
+  renderMes();
+}
+
+// ══════════════════════════════════════════════
+// TOAST
+// ══════════════════════════════════════════════
+function showToast(msg, type = "success") {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.className = "toast " + type;
+  t.style.display = "block";
+  setTimeout(() => t.style.display = "none", 3500);
+}
+
+// Manejo del redirect de MSAL al cargar
+msalInstance.handleRedirectPromise().then(result => {
+  if (result) {
+    msalInstance.setActiveAccount(result.account);
+    accessToken = result.accessToken;
+    document.getElementById("userEmail").textContent = result.account.username;
+    document.getElementById("loginScreen").style.display = "none";
+    document.getElementById("appScreen").style.display = "block";
+    initApp();
+  }
+});
+</script>
+</body>
+</html>
