@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Panel de Pedidos — Panadería Brasil</title>
+<script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: Georgia, serif; background: #F0E8D0; min-height: 100vh; }
@@ -42,7 +43,6 @@
   .field label { font-size: 11px; color: #666; }
   .field input, .field textarea { padding: 7px 10px; border: 1px solid #E8D9B8; border-radius: 6px; font-size: 14px; font-family: Georgia, serif; width: 100%; }
   .field input:focus, .field textarea:focus { outline: none; border-color: #2B5E35; }
-  .field input.error { border-color: #e74c3c; }
   .err-msg { font-size: 11px; color: #e74c3c; display: none; }
   .field textarea { resize: vertical; min-height: 70px; }
   .edit-actions { display: flex; gap: 8px; margin-top: 4px; }
@@ -82,10 +82,10 @@
     </div>
   </header>
   <div class="mes-nav">
-    <button id="btnPrev">‹</button>
+    <button id="btnPrev">&#8249;</button>
     <div class="mes-label" id="mesLabel"></div>
     <div class="count-badge" id="countLabel">0 pedidos</div>
-    <button id="btnNext">›</button>
+    <button id="btnNext">&#8250;</button>
   </div>
   <div class="content">
     <div id="pedidosList"></div>
@@ -103,7 +103,7 @@ const FOLDER   = "Pedidos";
 const FILE     = "Pedidos y Encargos 2026.xlsx";
 const TABLE    = "EncargosPedidos";
 const MESES    = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
-const DIAS     = ["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
+const DIAS     = ["Dom","Lun","Mar","Mi\u00e9","Jue","Vie","S\u00e1b"];
 
 let msalInstance = null;
 let pedidos = [];
@@ -113,19 +113,11 @@ let editId  = null;
 let driveId = null;
 let fileId  = null;
 
-// ─── Init MSAL después de que cargue la página ───
-window.addEventListener("load", async () => {
-  const script = document.createElement("script");
-  script.src = "https://cdnjs.cloudflare.com/ajax/libs/msal.js/2.38.3/msal-browser.min.js";
-  script.onload = initMSAL;
-  document.head.appendChild(script);
-});
-
-async function initMSAL() {
+async function initApp() {
   msalInstance = new msal.PublicClientApplication({
     auth: {
       clientId: CLIENT_ID,
-      authority: `https://login.microsoftonline.com/${TENANT_ID}`,
+      authority: "https://login.microsoftonline.com/" + TENANT_ID,
       redirectUri: window.location.href.split("?")[0].split("#")[0]
     },
     cache: { cacheLocation: "sessionStorage" }
@@ -133,7 +125,6 @@ async function initMSAL() {
 
   await msalInstance.initialize();
 
-  // Manejar redirect
   const result = await msalInstance.handleRedirectPromise();
   if (result) {
     msalInstance.setActiveAccount(result.account);
@@ -142,7 +133,6 @@ async function initMSAL() {
     return;
   }
 
-  // Revisar si ya hay sesión
   const accounts = msalInstance.getAllAccounts();
   if (accounts.length > 0) {
     msalInstance.setActiveAccount(accounts[0]);
@@ -150,49 +140,44 @@ async function initMSAL() {
     await cargarPedidos();
   }
 
-  // Botones
   document.getElementById("btnLogin").onclick = login;
   document.getElementById("btnLogout").onclick = logout;
-  document.getElementById("btnPrev").onclick  = () => cambiarMes(-1);
-  document.getElementById("btnNext").onclick  = () => cambiarMes(1);
+  document.getElementById("btnPrev").onclick = function(){ cambiarMes(-1); };
+  document.getElementById("btnNext").onclick = function(){ cambiarMes(1); };
 }
 
-// ─── Auth ───
 async function login() {
   try {
-    const result = await msalInstance.loginPopup({
-      scopes: ["Files.ReadWrite", "User.Read"]
-    });
+    const result = await msalInstance.loginPopup({ scopes: ["Files.ReadWrite","User.Read"] });
     msalInstance.setActiveAccount(result.account);
     showApp(result.account.username);
     await cargarPedidos();
   } catch(e) {
-    showToast("Error al iniciar sesión: " + e.message, "error");
+    showToast("Error al iniciar sesion: " + e.message, "error");
   }
 }
 
 function logout() {
-  msalInstance.logoutPopup().then(() => location.reload());
+  msalInstance.logoutPopup().then(function(){ location.reload(); });
 }
 
 function showApp(email) {
   document.getElementById("loginScreen").style.display = "none";
-  document.getElementById("appScreen").style.display   = "block";
+  document.getElementById("appScreen").style.display = "block";
   document.getElementById("userEmail").textContent = email;
 }
 
 async function getToken() {
   const account = msalInstance.getActiveAccount();
   try {
-    const r = await msalInstance.acquireTokenSilent({ scopes: ["Files.ReadWrite", "User.Read"], account });
+    const r = await msalInstance.acquireTokenSilent({ scopes: ["Files.ReadWrite","User.Read"], account: account });
     return r.accessToken;
-  } catch {
-    const r = await msalInstance.acquireTokenPopup({ scopes: ["Files.ReadWrite", "User.Read"] });
+  } catch(e) {
+    const r = await msalInstance.acquireTokenPopup({ scopes: ["Files.ReadWrite","User.Read"] });
     return r.accessToken;
   }
 }
 
-// ─── Graph ───
 async function graphGet(url) {
   const token = await getToken();
   const res = await fetch("https://graph.microsoft.com/v1.0" + url, {
@@ -213,34 +198,32 @@ async function graphPatch(url, body) {
   return res.json();
 }
 
-// ─── Cargar pedidos ───
 async function cargarPedidos() {
   showList("<div class='loading'>Cargando pedidos...</div>");
   try {
-    const siteRes  = await graphGet(`/sites/${SITE_HOST}:${SITE_PATH}`);
-    const siteId   = siteRes.id;
-    const fileRes  = await graphGet(`/sites/${siteId}/drive/root:/${FOLDER}/${FILE}`);
+    const siteRes = await graphGet("/sites/" + SITE_HOST + ":" + SITE_PATH);
+    const siteId = siteRes.id;
+    const fileRes = await graphGet("/sites/" + siteId + "/drive/root:/" + FOLDER + "/" + FILE);
     driveId = fileRes.parentReference.driveId;
-    fileId  = fileRes.id;
+    fileId = fileRes.id;
 
-    const colRes  = await graphGet(`/drives/${driveId}/items/${fileId}/workbook/tables/${TABLE}/columns`);
-    const cols    = colRes.value.map(c => c.name);
+    const colRes = await graphGet("/drives/" + driveId + "/items/" + fileId + "/workbook/tables/" + TABLE + "/columns");
+    const cols = colRes.value.map(function(c){ return c.name; });
 
-    const rowRes  = await graphGet(`/drives/${driveId}/items/${fileId}/workbook/tables/${TABLE}/rows`);
-    pedidos = rowRes.value.map((row, idx) => {
+    const rowRes = await graphGet("/drives/" + driveId + "/items/" + fileId + "/workbook/tables/" + TABLE + "/rows");
+    pedidos = rowRes.value.map(function(row, idx){
       const vals = row.values[0];
-      const obj  = { _idx: idx };
-      cols.forEach((col, i) => obj[col] = vals[i] ?? "");
+      const obj = { _idx: idx };
+      cols.forEach(function(col, i){ obj[col] = vals[i] !== null && vals[i] !== undefined ? vals[i] : ""; });
       return obj;
     });
 
     renderMes();
   } catch(e) {
-    showList(`<div class='empty'><div class='icon'>⚠️</div><div>Error: ${e.message}</div></div>`);
+    showList("<div class='empty'><div class='icon'>&#9888;</div><div>Error: " + e.message + "</div></div>");
   }
 }
 
-// ─── Render ───
 function parseFecha(val) {
   if (!val) return null;
   const s = String(val);
@@ -256,108 +239,66 @@ function parseFecha(val) {
 }
 
 function renderMes() {
-  document.getElementById("mesLabel").textContent = `${MESES[mesIdx]} ${anio}`;
-  const del_mes = pedidos
-    .filter(p => { const f = parseFecha(p["Fecha del pedido"]); return f && f.getMonth()===mesIdx && f.getFullYear()===anio; })
-    .sort((a,b) => {
-      const fa = parseFecha(a["Fecha del pedido"]), fb = parseFecha(b["Fecha del pedido"]);
-      if (fa-fb) return fa-fb;
-      return String(a["Hora"]).localeCompare(String(b["Hora"]));
-    });
+  document.getElementById("mesLabel").textContent = MESES[mesIdx] + " " + anio;
+  const del_mes = pedidos.filter(function(p){
+    const f = parseFecha(p["Fecha del pedido"]);
+    return f && f.getMonth() === mesIdx && f.getFullYear() === anio;
+  }).sort(function(a,b){
+    const fa = parseFecha(a["Fecha del pedido"]), fb = parseFecha(b["Fecha del pedido"]);
+    if (fa-fb) return fa-fb;
+    return String(a["Hora"]).localeCompare(String(b["Hora"]));
+  });
 
-  document.getElementById("countLabel").textContent = `${del_mes.length} pedido${del_mes.length!==1?"s":""}`;
+  document.getElementById("countLabel").textContent = del_mes.length + " pedido" + (del_mes.length !== 1 ? "s" : "");
 
   if (!del_mes.length) {
-    showList(`<div class='empty'><div class='icon'>📋</div><div>No hay pedidos en ${MESES[mesIdx]} ${anio}</div></div>`);
+    showList("<div class='empty'><div class='icon'>&#128203;</div><div>No hay pedidos en " + MESES[mesIdx] + " " + anio + "</div></div>");
     return;
   }
   showList(del_mes.map(renderPedido).join(""));
 
-  // Asignar eventos después de renderizar
-  del_mes.forEach(p => {
+  del_mes.forEach(function(p){
     const id = p["Id"];
-    const btnE = document.getElementById(`btn-editar-${id}`);
-    if (btnE) btnE.onclick = () => startEdit(id);
-    const btnG = document.getElementById(`btn-guardar-${id}`);
-    if (btnG) btnG.onclick = () => guardar(id, p._idx);
-    const btnC = document.getElementById(`btn-cancelar-${id}`);
-    if (btnC) btnC.onclick = () => cancelarEdit();
+    const btnE = document.getElementById("btn-editar-" + id);
+    if (btnE) btnE.onclick = function(){ startEdit(id); };
+    const btnG = document.getElementById("btn-guardar-" + id);
+    if (btnG) btnG.onclick = function(){ guardar(id, p._idx); };
+    const btnC = document.getElementById("btn-cancelar-" + id);
+    if (btnC) btnC.onclick = function(){ cancelarEdit(); };
   });
 }
 
 function renderPedido(p) {
-  const id      = p["Id"];
-  const f       = parseFecha(p["Fecha del pedido"]);
-  const dia     = f ? String(f.getDate()).padStart(2,"0") : "?";
-  const diaSem  = f ? DIAS[f.getDay()] : "";
-  const hora    = String(p["Hora"] || "");
-  const cliente = String(p["Nombre Cliente/Mesón"] || "");
-  const specs   = String(p["Indicar especificaciones, productos y cantidades del pedido"] || "");
-  const fISO    = f ? `${f.getFullYear()}-${String(f.getMonth()+1).padStart(2,"0")}-${String(f.getDate()).padStart(2,"0")}` : "";
+  const id = p["Id"];
+  const f = parseFecha(p["Fecha del pedido"]);
+  const dia = f ? String(f.getDate()).padStart(2,"0") : "?";
+  const diaSem = f ? DIAS[f.getDay()] : "";
+  const hora = String(p["Hora"] || "");
+  const cliente = String(p["Nombre Cliente/Mes\u00f3n"] || "");
+  const specs = String(p["Indicar especificaciones, productos y cantidades del pedido"] || "");
+  const fISO = f ? f.getFullYear() + "-" + String(f.getMonth()+1).padStart(2,"0") + "-" + String(f.getDate()).padStart(2,"0") : "";
 
   if (editId == id) {
-    return `
-    <div class="pedido-card" id="card-${id}">
-      <div class="pedido-edit">
-        <div class="edit-title">Editando pedido #${id}</div>
-        <div class="grid-2">
-          <div class="field">
-            <label>Fecha de entrega</label>
-            <input type="date" id="ef-${id}" value="${fISO}" />
-          </div>
-          <div class="field">
-            <label>Hora (HH:MM)</label>
-            <input type="text" id="eh-${id}" value="${esc(hora)}" placeholder="17:35" maxlength="5" />
-            <span class="err-msg" id="herr-${id}">Formato inválido. Usa HH:MM</span>
-          </div>
-        </div>
-        <div class="field">
-          <label>Cliente / Mesón</label>
-          <input type="text" id="ec-${id}" value="${esc(cliente)}" />
-        </div>
-        <div class="field">
-          <label>Especificaciones del pedido</label>
-          <textarea id="es-${id}">${esc(specs)}</textarea>
-        </div>
-        <div class="edit-actions">
-          <button class="btn-guardar" id="btn-guardar-${id}">Guardar cambios</button>
-          <button class="btn-cancelar" id="btn-cancelar-${id}">Cancelar</button>
-        </div>
-      </div>
-    </div>`;
+    return '<div class="pedido-card" id="card-' + id + '"><div class="pedido-edit"><div class="edit-title">Editando pedido #' + id + '</div><div class="grid-2"><div class="field"><label>Fecha de entrega</label><input type="date" id="ef-' + id + '" value="' + fISO + '" /></div><div class="field"><label>Hora (HH:MM)</label><input type="text" id="eh-' + id + '" value="' + esc(hora) + '" placeholder="17:35" maxlength="5" /><span class="err-msg" id="herr-' + id + '">Formato inv\u00e1lido. Usa HH:MM</span></div></div><div class="field"><label>Cliente / Mes\u00f3n</label><input type="text" id="ec-' + id + '" value="' + esc(cliente) + '" /></div><div class="field"><label>Especificaciones del pedido</label><textarea id="es-' + id + '">' + esc(specs) + '</textarea></div><div class="edit-actions"><button class="btn-guardar" id="btn-guardar-' + id + '">Guardar cambios</button><button class="btn-cancelar" id="btn-cancelar-' + id + '">Cancelar</button></div></div></div>';
   }
 
-  return `
-  <div class="pedido-card" id="card-${id}">
-    <div class="pedido-view">
-      <div class="fecha-badge">
-        <div class="fecha-dia-sem">${diaSem}</div>
-        <div class="fecha-dia-num">${dia}</div>
-      </div>
-      <div class="pedido-info">
-        <div class="pedido-cliente">${esc(cliente)}<span class="pedido-hora">${esc(hora)}</span></div>
-        <div class="pedido-specs">${esc(specs)}</div>
-      </div>
-      <button class="btn-editar" id="btn-editar-${id}">Editar</button>
-    </div>
-  </div>`;
+  return '<div class="pedido-card" id="card-' + id + '"><div class="pedido-view"><div class="fecha-badge"><div class="fecha-dia-sem">' + diaSem + '</div><div class="fecha-dia-num">' + dia + '</div></div><div class="pedido-info"><div class="pedido-cliente">' + esc(cliente) + '<span class="pedido-hora">' + esc(hora) + '</span></div><div class="pedido-specs">' + esc(specs) + '</div></div><button class="btn-editar" id="btn-editar-' + id + '">Editar</button></div></div>';
 }
 
 function esc(s) {
   return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
 }
 
-// ─── Edición ───
-function startEdit(id) { editId = id; renderMes(); document.getElementById("card-"+id)?.scrollIntoView({behavior:"smooth",block:"nearest"}); }
+function startEdit(id) { editId = id; renderMes(); var c = document.getElementById("card-"+id); if(c) c.scrollIntoView({behavior:"smooth",block:"nearest"}); }
 function cancelarEdit() { editId = null; renderMes(); }
 
 async function guardar(id, rowIndex) {
-  const fecha    = document.getElementById(`ef-${id}`).value;
-  const hora     = document.getElementById(`eh-${id}`).value;
-  const cliente  = document.getElementById(`ec-${id}`).value.trim();
-  const specs    = document.getElementById(`es-${id}`).value.trim();
-  const errEl    = document.getElementById(`herr-${id}`);
-  const btnEl    = document.getElementById(`btn-guardar-${id}`);
+  const fecha = document.getElementById("ef-"+id).value;
+  const hora = document.getElementById("eh-"+id).value;
+  const cliente = document.getElementById("ec-"+id).value.trim();
+  const specs = document.getElementById("es-"+id).value.trim();
+  const errEl = document.getElementById("herr-"+id);
+  const btnEl = document.getElementById("btn-guardar-"+id);
 
   if (!/^([01]\d|2[0-3]):([0-5]\d)$/.test(hora)) {
     errEl.style.display = "block";
@@ -368,25 +309,19 @@ async function guardar(id, rowIndex) {
   btnEl.textContent = "Guardando...";
 
   try {
-    const [y,m,d] = fecha.split("-");
-    const fechaFmt = `${d}/${m}/${y}`;
-
-    await graphPatch(
-      `/drives/${driveId}/items/${fileId}/workbook/tables/${TABLE}/rows/itemAt(index=${rowIndex})`,
-      { values: [[id, fechaFmt, hora, cliente, specs]] }
-    );
-
-    const p = pedidos.find(x => x["Id"] == id);
+    const parts = fecha.split("-");
+    const fechaFmt = parts[2] + "/" + parts[1] + "/" + parts[0];
+    await graphPatch("/drives/" + driveId + "/items/" + fileId + "/workbook/tables/" + TABLE + "/rows/itemAt(index=" + rowIndex + ")", { values: [[id, fechaFmt, hora, cliente, specs]] });
+    const p = pedidos.find(function(x){ return x["Id"] == id; });
     if (p) {
       p["Fecha del pedido"] = fechaFmt;
       p["Hora"] = hora;
-      p["Nombre Cliente/Mesón"] = cliente;
+      p["Nombre Cliente/Mes\u00f3n"] = cliente;
       p["Indicar especificaciones, productos y cantidades del pedido"] = specs;
     }
-
     editId = null;
     renderMes();
-    showToast("Pedido actualizado correctamente ✓");
+    showToast("Pedido actualizado correctamente");
   } catch(e) {
     showToast("Error al guardar: " + e.message, "error");
     btnEl.disabled = false;
@@ -397,20 +332,23 @@ async function guardar(id, rowIndex) {
 function cambiarMes(dir) {
   editId = null;
   mesIdx += dir;
-  if (mesIdx < 0)  { mesIdx = 11; anio--; }
-  if (mesIdx > 11) { mesIdx = 0;  anio++; }
+  if (mesIdx < 0) { mesIdx = 11; anio--; }
+  if (mesIdx > 11) { mesIdx = 0; anio++; }
   renderMes();
 }
 
 function showList(html) { document.getElementById("pedidosList").innerHTML = html; }
 
-function showToast(msg, type="success") {
+function showToast(msg, type) {
+  type = type || "success";
   const t = document.getElementById("toast");
   t.textContent = msg;
   t.className = "toast " + type;
   t.style.display = "block";
-  setTimeout(() => t.style.display = "none", 3500);
+  setTimeout(function(){ t.style.display = "none"; }, 3500);
 }
+
+window.onload = function() { initApp(); };
 </script>
 </body>
 </html>
